@@ -1,11 +1,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <fcntl.h>
 
 //Defines
 #define ALPHABET	97		// 'a' ASCII - start of alphabets
 #define ALPHABETS	27
 #define SPACE	' '
+#define FILE_PATH	"./names.txt"
+#define NAME_MAX	7
+#define EXISTS		1
+#define VISITED		2
 
 typedef struct node {
 	struct node* valid[ALPHABETS+2];
@@ -24,9 +29,9 @@ node* create_alphabets(node* output, int* root_letter, int end) {
 		(output)->end_of_line = end;
 	}
 	// Node should already exist, set a letter but dont change anything if end_of_line was set
-	if (output->end_of_line != 1 && end == 1) {
+	if (output->end_of_line == 0 && end == EXISTS) {
 		printf("setting eOl\n");
-		(output)->end_of_line = 1;
+		(output)->end_of_line = EXISTS;
 	}
 	// Either way, we've added to the root so let's update that
 	*root_letter = *root_letter + 1;
@@ -58,8 +63,11 @@ void print(node* root) {
 		else {
 			printf("%c", i + ALPHABET);
 		}
-		if (root->valid[i]->end_of_line == 1) {
+		if (root->valid[i]->end_of_line == EXISTS) {
+			root->valid[i]->end_of_line = VISITED;
 			printf("\n");
+			// restart at the beginning to print any more letters of the name
+			i--;
 		}
 		// Go further into this
 		print(root->valid[i]);
@@ -112,17 +120,33 @@ void place_in_tree(char* input, node* root) {
 
 // Delete
 
+
+
 int main(void) {
-	// Get input
-	char* input = "M";
+
+	// Get a node
 	node* root = malloc(sizeof(node));
 	root->root_count = 0;
 	root->end_of_line = 0;
-	place_in_tree(input, root);
+
+	// Get input
+	FILE* names = fopen(FILE_PATH, "r");
+	if(!names) {
+		printf("Couldn't open file to read!\n");
+		return -1;
+	}
+	char temp_name[NAME_MAX] = {};
+	size_t ret = fread(temp_name, sizeof(*temp_name),NAME_MAX, names);
+	if (ret != NAME_MAX) {
+		printf("Error reading file! - %zu\n", ret);
+		return -1;
+	}
+	printf("Placing %s\n", temp_name);
+	
+	place_in_tree(temp_name, root);
 	char* second = "Shiv S";
 	place_in_tree(second, root);
 	// Place in data structure
 	print(root);
-	printf("\n");
 	return 0;
 }
