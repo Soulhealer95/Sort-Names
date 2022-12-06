@@ -1,152 +1,201 @@
 #include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <ctype.h>
-#include <fcntl.h>
+#include <errno.h>
+#include <pthread.h>
 
-//Defines
-#define ALPHABET	97		// 'a' ASCII - start of alphabets
-#define ALPHABETS	27
-#define SPACE	' '
-#define FILE_PATH	"./names.txt"
-#define NAME_MAX	7
-#define EXISTS		1
-#define VISITED		2
+// create a lock!
+pthread_mutex_t main_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+// Definitions
+#define SIZE_NAME	15
+#define FILE_SIZE	140190
+//#define FILE_SIZE	40
+#define ALPHABETS 	28
+#define SPACE_INDEX	0
+#define ALP_START	96 // start at a-1
+#define FILE_NAME "./names.txt"
+#define RETURN_OK	0
+#define RETURN_ERROR	-1
+
+// Let's make a dictionary!
+// each node will have access to 27 possibilities = a - z and space
+// and a bit to note if this is end of a word
 typedef struct node {
-	struct node* valid[ALPHABETS+2];
-	int end_of_line;
-	int root_count; // This is clever way to support parallelization.
+		struct node* alphabets[ALPHABETS];
+		int eow; // End of word
+		int word_count;
+		int visited;
 } node;
 
-node* create_alphabets(node* output, int* root_letter, int end) {
-	if (!output) {
-		// Maybe should use calloc? How does valid[ALPHABETS] make an array with NULL pointers?
-		output = malloc(sizeof(node));
-		if(output == NULL) {
-			printf("Not enough Memory!\n");
-			return NULL;
+
+char to_letter(int index) {
+		if (index == 0) {
+				return ' ';
 		}
-		(output)->end_of_line = end;
-	}
-	// Node should already exist, set a letter but dont change anything if end_of_line was set
-	if (output->end_of_line == 0 && end == EXISTS) {
-		printf("setting eOl\n");
-		(output)->end_of_line = EXISTS;
-	}
-	// Either way, we've added to the root so let's update that
-	*root_letter = *root_letter + 1;
-	return output;
-}
-
-void edit_node(node* place, int letter,int* root_letter, int end) {
-	if (letter < 0 || letter >= ALPHABETS+1 || root_letter == NULL) {
-		printf("Couldn't edit node\n");
-		return;
-	}
-	// Check if node already exists. set same status
-	place->valid[letter] = create_alphabets(place->valid[letter],root_letter, end);
-	return;
-}
-
-
-void print(node* root) {
-	if (!root) {
-		return;
-	}
-	for (int i=0; i <= ALPHABETS; i++) {
-		if(root->valid[i] == NULL) {
-			continue;
+		else if (index < ALPHABETS) {
+				return (char) index + ALP_START;
 		}
-		if (i == ALPHABETS) {
-			printf(" ");
-		}
-		else {
-			printf("%c", i + ALPHABET);
-		}
-		if (root->valid[i]->end_of_line == EXISTS) {
-			root->valid[i]->end_of_line = VISITED;
-			printf("\n");
-			// restart at the beginning to print any more letters of the name
-			i--;
-		}
-		// Go further into this
-		print(root->valid[i]);
-	}
-	return;
-}
-// Insert
-void place_in_tree(char* input, node* root) {
-	char lower;
-	node* ptr = root;
-	int index, end;
-	if (input == NULL) {
-		printf("Invalid input\n");
-		return;
-	}
-	for(;*input; input++) {
-		lower = tolower(*input);
-		index = 0;
-		end = 0;
-
-		// convert alphabet to an acceptable index
-		// 'a'- 0 to 'z'- 25
-		if ((int) lower >= ALPHABET) {
-		// validated the output is acceptable.
-		// now place it into the structure
-			index = (int) lower - ALPHABET;
-			//printf("%c - %d\n",lower, (int) lower - ALPHABET);
-		}
-		else if (lower == SPACE) {
-			index = ALPHABETS; // set space as last entry
-			//printf("%c - %d\n", lower, ALPHABETS+1);
-		}
-		else {
-			printf("Invalid characters detected. skipping - '%c'\n", lower);
-			continue;
-		}
-		if(*(input+1) == '\0') {
-			end = 1;
-		}
-		edit_node(ptr, index, &root->root_count, end);
-		ptr = ptr->valid[index];
-	}
-	return;
-}
-
-
-// Traverse
-
-// Create
-
-// Delete
-
-
-
-int main(void) {
-
-	// Get a node
-	node* root = malloc(sizeof(node));
-	root->root_count = 0;
-	root->end_of_line = 0;
-
-	// Get input
-	FILE* names = fopen(FILE_PATH, "r");
-	if(!names) {
-		printf("Couldn't open file to read!\n");
 		return -1;
+}
+
+int to_index(char letter) {
+	if (letter == ' ') {
+			return SPACE_INDEX;
 	}
-	char temp_name[NAME_MAX] = {};
-	size_t ret = fread(temp_name, sizeof(*temp_name),NAME_MAX, names);
-	if (ret != NAME_MAX) {
-		printf("Error reading file! - %zu\n", ret);
-		return -1;
-	}
-	printf("Placing %s\n", temp_name);
+	return (tolower(letter) - ALP_START);
+
+}
+
+void set_end(node* node, int end_val) {
+		// don't unset a value if it's already set
+		if (node->eow == 1) {
+				return;
+		}
+		if (end_val == 0 || end_val == 1) {
+				node->eow = end_val;
+		}
+		return;
+}
+
+node* edit_node(node* start, int alphabet_index,  int is_end) {
+		if (!start) {
+				return NULL;
+		}
+		if (!start->alphabets[alphabet_index]) {
+				if ((start->alphabets[alphabet_index] = malloc(sizeof(node))) == NULL) {
+								return NULL;
+					}
+		}
+		set_end(start->alphabets[alphabet_index], is_end);
+		start->alphabets[alphabet_index]->visited++;
+		return start->alphabets[alphabet_index];
+}
+
+// We can be dirty and leak memory in order to make things faster but let's set up something
+// to do the cleaning anyway in case we want to use it :D
+void clean_nodes(node* root) {
+		if (!root) {
+				return;
+		}
+
+		for(int i=0; i < ALPHABETS; i++) {
+				// if node has leaves, follow them and clean them up
+				if (root->alphabets[i] != NULL) {
+					clean_nodes(root->alphabets[i]);
+				}
+		}
+		// We're at the end, clean the node itself
+		free(root);
+		return;
+}
+
+// Get first name
+void one_name(node* root, char* output, int* index) {
+		if(!root) {
+				return;
+		}
+		int i=0;
+		while(i < ALPHABETS) {
+				if(root->alphabets[i] != NULL) {
+						if (root->alphabets[i]->visited > 0) {
+								break;
+						}
+				}
+				i++;
+		}
+		root->alphabets[i]->visited--;
+		sprintf(&output[*index], "%c", to_letter(i));
+		*index = *index+1;
+
+		// end of the word?
+		if(root->alphabets[i]->eow == 1) {
+				sprintf(&output[*index], "\n");
+				*index = *index+1;
+				return;
+		}
+		//go further! 
+		one_name(root->alphabets[i], output, index);
+		return;
+}
+void populate_ds(const char* file_string, node* root, int start, int end) {
+
+		if (root == NULL) {
+				return;
+		}
+		node* ptr = root;
+		int root_index= 0;
+		int first = 0;
+		int space = 0;
+
+		// Traverse list
+		// Also sorts. so technically this is how long it took to sort
+		for (int i=start; i < end;i++)
+		{
+			if (file_string[i] == ' ') 
+			{
+					space = i;
+			}
+			else if (file_string[i] == '\n') 
+			{
+					//remember what letter we started from
+					root_index = to_index(file_string[space+1]);
+
+					// Last name first
+					for (int j = space+1; j < i; j++) {
+						ptr = edit_node(ptr, to_index(file_string[j]), 0);  
+					//	printf("%c", file_string[j]);
+					}
+
+					// Then first name
+					ptr = edit_node(ptr, SPACE_INDEX, 0);
+					//printf(" ");
+					for (int j = first; j < space; j++) {
+						ptr = edit_node(ptr, to_index(file_string[j]), 0);  
+					}	
+					// end of word
+					set_end(ptr, 1);	
+					first = i+1;
+					ptr = root;
+					ptr->alphabets[root_index]->word_count++;
+					//printf("\n");
+			}
+		}
+		return;
+
+}
+
+		
+int main() {
+		// Reading from disk is slow. let's use the insane amount of memory we got these days and store it all in memory
+		int fp = open(FILE_NAME, O_RDONLY);
+		int data = 0;
+		char* file_string = calloc((FILE_SIZE+1), sizeof(char));
+		char* sorted_string = calloc((FILE_SIZE+1), sizeof(char));
+		while((data = read(fp, file_string, sizeof(char)*FILE_SIZE)) != 0);
+		// No longer need the file descriptor. 
+		close(fp);
+		// Now we got the whole string in memory -- should be about 0.25 seconds to print this. same as cat 
+
+		// Empty node
+		node* root = malloc(sizeof(node));
+		populate_ds(file_string, root, 0, FILE_SIZE);
+		int* index = malloc(sizeof(int));
+		int k = 0;
+		node* last;
+		
+		while(k < 10000) {
+			one_name(root, sorted_string, index);
+			k++;
+		}
+		printf("%s",sorted_string);
+
+		free(file_string);
+		free(sorted_string);
+		clean_nodes(root);
+		return RETURN_OK;
+}
+		
 	
-	place_in_tree(temp_name, root);
-	char* second = "Shiv S";
-	place_in_tree(second, root);
-	// Place in data structure
-	print(root);
-	return 0;
-}
