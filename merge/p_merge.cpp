@@ -1,3 +1,20 @@
+/*					Parallel Merge Sort
+ * Sort a list of names by last name then first name
+ * Algorithm: Merge Sort
+ * Fastest Speed: ~3ms @ depth = 10
+ *
+ * Description:
+ * Pretty straight forward textbook implementation that works.
+ * Doesn't print the list but can be made to.
+ * Only thing it does better is when it gets data from disk, it organizes it
+ * as lastname_firstname. so minor tweaks needed if they want to see it.
+ * It's no different than using a struct to store it differently.
+ *
+ * Author:													Dated
+ * Shivam S.												08-Dec-22
+ * Student, McMasterU
+ *
+ */
 #include <iostream>
 #include <cstring>
 #include <fstream>
@@ -11,6 +28,7 @@
 #define FILE_NAME		"../names.txt"
 #define MAX_DEPTH	10
 #define ITEMS	10000
+// This define is used mostly for debugging as it can limit items to sort
 #define TEST_ITEMS	ITEMS
 
 // Prototypes
@@ -23,14 +41,14 @@ char** get_namesf(const char* file_name , int file_size, int items);
 
 // Actual Code
 int main() {
+	// Get some vars in the picture
 	int range_end, len = ITEMS;
 	std::atomic_int* depth;
+	// get list of names from the file
 	char** list;
 	list = get_namesf(FILE_NAME , FILE_SIZE, len);
-	depth = new std::atomic_int [1];
-	*depth = 0;
+	depth = new std::atomic_int [2]();
 	range_end = TEST_ITEMS-1;
-
 
 	// Start Sorting!
 	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
@@ -38,11 +56,11 @@ int main() {
 	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
 	std::cout << "Sort time (sec) = " << (std::chrono::duration_cast<std::chrono::microseconds>(end-begin).count())/1000000.0 << std::endl;
 
-	/* print_list -- debugging only
+	/* print_list -- debugging only *
 	for(int i =0; i < TEST_ITEMS; i++) {
 		std::cout << list[i] << "\n";
 	}
-	end print */
+	//end print*/
 	delete [] list;
 	return 0;
 }
@@ -91,14 +109,11 @@ void* simple_merge(char** list, int start, int end, std::atomic_int* depth) {
 	}
 
 	// merge halves
-//	pthread_mutex_lock(&big_lock);
 	merge(list, r_start, mid, r_end);
-//	pthread_mutex_unlock(&big_lock);
-
 	return NULL;
 }
 
-
+// provide memory to lists :)
 void create_list(char** start, int len, int size) {
 	for(int i=0; i < len; i++) {
 		start[i] = new char [size];
@@ -106,14 +121,15 @@ void create_list(char** start, int len, int size) {
 	return;
 }
 
-
+// swap one member of list with another
 void swap(char** list, char** temp, int start, int end) {
 	for(int k=0, p=start; p <= end; p++, k++) {
 			strcpy(list[p],temp[k]);
 		}
 	return;
 }
-
+// basically wrapper for strcmp but the idea is to provide a wrapper so
+// we can use same merge() implementation
 int compare(char* x, char* y) {
 	if (strcmp(x,y) >= 0) {
 		return 0;
@@ -121,12 +137,18 @@ int compare(char* x, char* y) {
 	return -1;
 }
 
+// Actual magic happens here :)
+// Doesn't need any syncronization for 2 reasons:
+// 1) All threads work on different bit of the list
+// 2) The join() in first simple_merge thread ensures the threads dont reach here
+// before they have to
 void merge(char** list, int start, int mid, int end) {
 	// if there's only one element, just return
 	if(start == end) {
 		return;
 	}
 	int len = end-start+1;
+	// allocating a temp buffer for moving things
 	char** temp;
 	temp = new char* [len];
 	create_list(temp,len,NAME_SIZE);
@@ -165,7 +187,7 @@ void merge(char** list, int start, int mid, int end) {
 
 	return;
 }
-
+// Just some IO function. Please Free after :)
 char** get_namesf(const char* file_name , int file_size, int items) {
 	using namespace std;
 	//allocate mem to return buffer
@@ -176,16 +198,15 @@ char** get_namesf(const char* file_name , int file_size, int items) {
 	char fname[NAME_SIZE];
 	char lname[NAME_SIZE];
 	int word = 0;
-	// read file
+	// read file, store  to list as lastname+firstname
 	ifstream file(FILE_NAME);
-	//file.open(FILE_NAME, ios::binary);
 	while(file >> fname >> lname) {
 			strcat(return_str[word],lname);
 			strcat(return_str[word]," ");
 			strcat(return_str[word],fname);
 			word++;
 	}
-	/*
+	/* debugging purposes only
 	for(int p =0; p < items;p++){
 		cout << return_str[p] << endl;
 	}
