@@ -1,11 +1,13 @@
 #include <iostream>
 #include <cstring>
 #include <fstream>
+#include <chrono>
 
 // Definitions
 #define NAME_SIZE 25
 #define FILE_SIZE		140190
 #define FILE_NAME		"../names.txt"
+#define SORT	10000
 
 typedef struct data {
 	char** list;
@@ -30,11 +32,17 @@ int main() {
 	tinfo = new data [1];
 	tinfo->list = list;
 	tinfo->start = 0;
-	tinfo->end = len-1;
+	tinfo->end = SORT-1;
+
+	std::chrono::steady_clock::time_point begin = std::chrono::steady_clock::now();
 	simple_merge(tinfo);
-	for(int i =0; i < len; i++) {
+	std::chrono::steady_clock::time_point end = std::chrono::steady_clock::now();
+	std::cout << "Time difference (sec) = " <<  (std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count()) /1000000.0  <<std::endl;
+	/*
+	for(int i =0; i < SORT; i++) {
 		std::cout << list[i] << "\n";
 	}
+	*/
 	delete [] list;
 	return 0;
 }
@@ -54,14 +62,11 @@ void simple_merge(data* info) {
 	int r_end = info->end;
 	int  len = r_end - info->start + 1;
 	// find mid
-	if(len == 2) {
-		mid = info->start;
-	}
-	else if(len % 2 !=0) {
-		mid =  info->start + (len-1)/2;
+	if(len % 2 !=0) {
+		mid =  info->start + (len-1)/2 - 1;
 	}
 	else {
-		mid = info->start + len/2;
+		mid = info->start + len/2 - 1;
 	}
 
 	// sort left half

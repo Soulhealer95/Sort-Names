@@ -60,14 +60,11 @@ void simple_merge(data* info) {
 	int r_end = info->end;
 	int  len = r_end - info->start + 1;
 	// find mid
-	if(len == 2) {
-		mid = info->start;
-	}
-	else if(len % 2 !=0) {
-		mid =  info->start + (len-1)/2;
+	if(len % 2 !=0) {
+		mid =  info->start + (len-1)/2 - 1;
 	}
 	else {
-		mid = info->start + len/2;
+		mid = info->start + len/2 - 1;
 	}
 
 	// sort left half
